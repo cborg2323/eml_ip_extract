@@ -43,7 +43,8 @@ class IPExtractor:
     """Responsável exclusivamente por localizar e validar endereços IP em texto."""
 
     _IPV4_PATTERN = re.compile(r"\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b")
-    _IPV6_PATTERN = re.compile(r"\b(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}\b")
+    # Regex flexível para IPv6: captura padrões completos e abreviados com '::'
+    _IPV6_PATTERN = re.compile(r"\b[0-9a-fA-F]{0,4}(?::[0-9a-fA-F]{0,4}){2,7}\b")
 
     @classmethod
     def extract_valid_ips(cls, text: str) -> Iterator[ipaddress.IPv4Address | ipaddress.IPv6Address]:
