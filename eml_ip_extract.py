@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+import argparse
 import email
 from email import policy
 from email.message import EmailMessage
@@ -133,8 +135,20 @@ class ConsolePresenter:
 # 4. ENTRY POINT (PONTO DE ENTRADA DO APLICATIVO)
 # ==============================================================================
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Extrai a rota de IPs de um arquivo .eml a partir dos cabeçalhos Received.")
+    parser.add_argument(
+        "file_path",
+        nargs="?",
+        default="mensagem.eml",
+        type=Path,
+        help="Caminho para o arquivo .eml (padrão: mensagem.eml)",
+    )
+    return parser.parse_args()
+
 def main():
-    eml_path = Path("mensagem.eml")
+    args = parse_args()
+    eml_path: Path = args.file_path
 
     try:
         # 1. Carrega o e-mail
