@@ -14,14 +14,9 @@ from typing import Iterator
 # ==============================================================================
 
 @dataclass(frozen=True)
-class Hop:
-    """Representa um salto individual (hop) no percurso do e-mail.
-    
-    Encapsula os dados do salto e regras de negócio relativas ao IP.
-    """
-    number: int
+class IPInfo:
+    """Encapsula as propriedades e regras de um endereço IP."""
     ip: ipaddress.IPv4Address | ipaddress.IPv6Address
-    raw_header: str
 
     @property
     def is_private(self) -> bool:
@@ -35,6 +30,13 @@ class Hop:
     def version(self) -> str:
         return f"IPv{self.ip.version}"
 
+
+@dataclass(frozen=True)
+class Hop:
+    """Representa um cabeçalho Received (Salto) e todos os IPs contidos nele."""
+    number: int
+    raw_header: str
+    ips: list[IPInfo]
 
 
 # ==============================================================================
@@ -51,11 +53,17 @@ class IPExtractor:
     @classmethod
     def extract_valid_ips(cls, text: str) -> Iterator[ipaddress.IPv4Address | ipaddress.IPv6Address]:
         """Localiza candidatos via Regex e valida com o módulo ipaddress."""
-        matches = cls._IPV4_PATTERN.findall(text) + cls._IPV6_PATTERN.findall(text)
+        candidates = cls._IPV4_PATTERN.findall(text) + cls._IPV6_PATTERN.findall(text)
 
-        for match in matches:
+        seen_in_header = set()
+        for candidate in candidates:
             try:
-                yield ipaddress.ip_address(match)
+                ip_obj = ipaddress.ip_address(candidate)
+
+                if ip_obj not in seen_in_header:
+                    seen_in_header.add(ip_obj)
+                    yield ip_obj
+
             except ValueError:
                 continue # Descarta números fora do intervalo IP
 
@@ -91,15 +99,23 @@ class EmailRouteTracer:
         for header_value in received_headers:
             clean_header = " ".join(str(header_value).split())
 
-            for ip in self._ip_extractor.extract_valid_ips(clean_header):
+            # Captura todos os IPs válidos deste cabeçalho específico
+            found_ips = [
+                IPInfo(ip)
+                for ip in self._ip_extractor.extract_valid_ips(clean_header)
+            ]
+
+            # Apenas cria o Salto se houver ao menos um IP válido no cabeçalho
+            if found_ips:
                 hops.append(
                     Hop(
                         number=hop_counter,
-                        ip=ip,
-                        raw_header=clean_header
+                        raw_header=clean_header,
+                        ips=found_ips,
                     )
                 )
                 hop_counter += 1
+
 
         return hops
 
@@ -118,21 +134,37 @@ class ConsolePresenter:
             print("Nenhum cabeçalho 'Received' ou IP válido foi encontrado.")
             return
 
-        print("=" * 68)
+        print("=" * 72)
         print("  ROTA DE NAVEGAÇÃO DO E-MAIL (ORIGEM -> DESTINO)")
-        print("=" * 68 + "\n")
+        print("=" * 72 + "\n")
 
         for hop in hops:
-            snippet = (hop.raw_header[:70] + "...") if len(hop.raw_header) > 70 else hop.raw_header
+            snippet = (
+                (hop.raw_header[:75] + "...")
+                if len(hop.raw_header) > 75
+                else hop.raw_header
+            )
             print(f"Salto #{hop.number}")
-            print(f" ├─ IP:         {hop.ip} ({hop.version})")
-            print(f" ├─ Tipo:       {hop.network_type}")
-            print(f" └─ Cabeçalho:  {snippet}\n")
+            print(f"Cabeçalho: {snippet}")
+            print("  │")
+
+            total_ips = len(hop.ips)
+            for idx, ip_info in enumerate(hop.ips, start=1):
+                is_last = idx == total_ips
+                tree_branch = "  └──" if is_last else "  ├──"
+                tree_indent = "     " if is_last else "  │  "
+
+                print(f"{tree_branch} IP:   {ip_info.ip} ({ip_info.version})")
+                print(f"{tree_indent} Tipo: {ip_info.network_type}")
+                if not is_last:
+                    print("  │")
+
+            print("\n" + "─" * 72 + "\n")
 
 
 
 # ==============================================================================
-# 4. ENTRY POINT (PONTO DE ENTRADA DO APLICATIVO)
+# 4. CLI ARGUMENT PARSER & ENTRY POINT (PONTO DE ENTRADA DO APLICATIVO)
 # ==============================================================================
 
 def parse_args() -> argparse.Namespace:
